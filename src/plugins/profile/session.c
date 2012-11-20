@@ -334,12 +334,37 @@ session_reconnect ()
     profile_plugin_reconnect (g_core, session_bus);
 }
 
+static gboolean
+session_bus_connect ()
+{
+    DBusError error;
+    dbus_error_init(&error);
+
+    if (!session_bus) {
+        session_bus = dbus_bus_get(DBUS_BUS_SESSION, &error);
+        if (dbus_error_is_set(&error)) {
+            N_DEBUG (LOG_CAT "Could not connect to DBus session bus.");
+            return FALSE;
+        }
+    }
+
+    N_DEBUG (LOG_CAT "Connected to DBus session bus.");
+    session_reconnect ();
+
+    return TRUE;
+}
+
 int
 session_initialize (NCore *core)
 {
     gchar *address = NULL;
 
     g_core = core;
+
+    /* before polling for address filename or anything try to
+     * open session bus connection. */
+    if (session_bus_connect())
+        return TRUE;
 
     /* if the session bus address file exists already, then try to load
        the address from the session file. */
