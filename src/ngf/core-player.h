@@ -26,6 +26,14 @@
 #include "core-internal.h"
 #include "sinkinterface-internal.h"
 
+typedef enum _NCorePlayerState
+{
+    N_CORE_EVENT_FAILED         = 0,
+    N_CORE_EVENT_COMPLETED      = 1,
+    N_CORE_EVENT_PLAYING        = 2,
+    N_CORE_EVENT_PAUSED         = 3
+} NCorePlayerState;
+
 int  n_core_play_request     (NCore *core, NRequest *request);
 int  n_core_pause_request    (NCore *core, NRequest *request);
 int  n_core_resume_request   (NCore *core, NRequest *request);

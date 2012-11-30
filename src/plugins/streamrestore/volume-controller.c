@@ -158,6 +158,12 @@ filter_cb (DBusConnection *connection, DBusMessage *msg, void *data)
             RETRY_TIMEOUT);
 
         disconnect_from_pulseaudio ();
+        // If PulseAudio is restarting path to runtime files may change so we'll
+        // have to request DBus address again.
+        if (volume_pulse_address) {
+            g_free(volume_pulse_address);
+            volume_pulse_address = NULL;
+        }
         retry_connect();
     }
 

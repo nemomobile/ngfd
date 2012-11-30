@@ -36,7 +36,7 @@ static GList*   n_core_fire_filter_sinks_hook         (NRequest *request, GList 
 static GList*   n_core_query_capable_sinks            (NRequest *request);
 static void     n_core_merge_request_properties       (NRequest *request, NEvent *event);
 
-static void     n_core_send_reply               (NRequest *request, int code);
+static void     n_core_send_reply               (NRequest *request, NCorePlayerState status);
 static void     n_core_send_error               (NRequest *request, const char *err_msg);
 static int      n_core_sink_in_list             (GList *sinks, NSinkInterface *sink);
 static int      n_core_sink_priority_cmp        (gconstpointer in_a, gconstpointer in_b);
@@ -161,14 +161,14 @@ n_core_merge_request_properties (NRequest *request, NEvent *event)
 }
 
 static void
-n_core_send_reply (NRequest *request, int code)
+n_core_send_reply (NRequest *request, NCorePlayerState status)
 {
     g_assert (request != NULL);
     g_assert (request->input_iface != NULL);
 
     if (request->input_iface->funcs.send_reply) {
         request->input_iface->funcs.send_reply (request->input_iface,
-            request, code);
+            request, status);
     }
 }
 
@@ -352,7 +352,7 @@ n_core_request_done_cb (gpointer userdata)
     }
     else if (!request->has_failed || request->is_fallback) {
         /* we completed the original one or fallback, complete the event. */
-        n_core_send_reply (request, 0);
+        n_core_send_reply (request, N_CORE_EVENT_COMPLETED);
         goto done;
     }
 
@@ -477,6 +477,9 @@ n_core_play_request (NCore *core, NRequest *request)
 
     core->requests = g_list_append (core->requests, request);
     n_core_prepare_sinks (all_sinks, request);
+
+    n_core_send_reply (request, N_CORE_EVENT_PLAYING);
+
     return TRUE;
 
 fail_request:
@@ -494,6 +497,7 @@ n_core_pause_request (NCore *core, NRequest *request)
 
     GList          *iter = NULL;
     NSinkInterface *sink = NULL;
+    int all_paused = 1;
 
     if (request->is_paused) {
         N_DEBUG (LOG_CAT "request '%s' is already paused, no action.",
@@ -507,8 +511,12 @@ n_core_pause_request (NCore *core, NRequest *request)
         if (sink->funcs.pause && !sink->funcs.pause (sink, request)) {
             N_WARNING (LOG_CAT "sink '%s' failed to pause request '%s'",
                 sink->name, request->name);
+            all_paused = 0;
         }
     }
+
+    if (all_paused)
+        n_core_send_reply (request, N_CORE_EVENT_PAUSED);
 
     request->is_paused = TRUE;
     return TRUE;
@@ -522,6 +530,7 @@ n_core_resume_request (NCore *core, NRequest *request)
 
     GList          *iter = NULL;
     NSinkInterface *sink = NULL;
+    int all_resumed = 1;
 
     if (!request->is_paused) {
         N_DEBUG (LOG_CAT "request '%s' is not paused, no action.",
@@ -535,8 +544,12 @@ n_core_resume_request (NCore *core, NRequest *request)
         if (sink->funcs.play && !sink->funcs.play (sink, request)) {
             N_WARNING (LOG_CAT "sink '%s' failed to resume (play) request '%s'",
                 sink->name, request->name);
+            all_resumed = 0;
         }
     }
+
+    if (all_resumed)
+        n_core_send_reply (request, N_CORE_EVENT_PLAYING);
 
     request->is_paused = FALSE;
     return TRUE;
