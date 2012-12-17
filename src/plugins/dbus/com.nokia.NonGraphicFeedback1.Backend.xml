@@ -1,0 +1,24 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN" "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<node>
+    <interface name="com.nokia.NonGraphicFeedback1.Backend">
+        <method name="Play">
+            <arg name="event" type="s" direction="in"/>
+            <arg name="properties" type="a(sv)"/>
+            <arg name="" type="u" direction="out"/>
+        </method>
+        <method name="Pause">
+            <arg name="event_id" type="u" direction="in"/>
+            <arg name="pause" type="b" direction="in"/>
+            <arg name="" type="u" direction="out"/>
+        </method>
+        <method name="Stop">
+            <arg name="event_id" type="u" direction="in"/>
+            <arg name="" type="u" direction="out"/>
+        </method>
+        <signal name="Status">
+            <arg name="" type="u" direction="out"/>
+            <arg name="" type="u" direction="out"/>
+        </signal>
+    </interface>
+</node>
+

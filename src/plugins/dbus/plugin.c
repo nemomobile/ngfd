@@ -35,6 +35,8 @@ N_PLUGIN_NAME        ("dbus")
 N_PLUGIN_VERSION     ("0.1")
 N_PLUGIN_DESCRIPTION ("D-Bus interface")
 
+#include "com.nokia.NonGraphicFeedback1.Backend.xml.h"
+
 #define LOG_CAT "dbus: "
 
 #define NGF_DBUS_PROXY_NAME   "com.nokia.NonGraphicFeedback1"
@@ -47,7 +49,10 @@ N_PLUGIN_DESCRIPTION ("D-Bus interface")
 #define NGF_DBUS_METHOD_STOP  "Stop"
 #define NGF_DBUS_METHOD_PAUSE "Pause"
 
-#define NGF_DBUS_PROPERTY     "dbus.event.id"
+#define NGF_DBUS_PROPERTY_ID   "dbus.event.id"
+#define NGF_DBUS_PROPERTY_NAME "dbus.event.client"
+
+#define DBUS_CLIENT_MATCH "type='signal',sender='org.freedesktop.DBus',member='NameOwnerChanged'"
 
 #define RINGTONE_STOP_TIMEOUT 200
 
@@ -78,6 +83,7 @@ typedef struct _DBusInterfaceData
     DBusConnection  *connection;
     NInputInterface *iface;
     uint32_t event_id;
+    GSList *clients; // Internal cache of all clients currently connected
 } DBusInterfaceData;
 
 static DBusInterfaceData *g_data = NULL;
@@ -214,6 +220,8 @@ dbusif_play_handler (DBusConnection *connection, DBusMessage *msg,
     NProplist       *properties = NULL;
     NRequest        *request    = NULL;
     DBusMessageIter  iter;
+    const char      *sender     = NULL;
+    GSList          *search     = NULL;
 
     dbus_message_iter_init (msg, &iter);
     if (dbus_message_iter_get_arg_type (&iter) != DBUS_TYPE_STRING)
@@ -225,12 +233,24 @@ dbusif_play_handler (DBusConnection *connection, DBusMessage *msg,
     if (!msg_get_properties (&iter, &properties))
         goto fail;
 
-    N_INFO (LOG_CAT ">> play received for event '%s' with id '%u'", event, event_id);
+    // We won't launch events without proper sender
+    if ((sender = dbus_message_get_sender (msg)) == NULL)
+        goto fail;
+
+    N_INFO (LOG_CAT ">> play received for event '%s' with id '%u' (client %s)", event, event_id, sender);
+
+    for (search = g_data->clients; search; search = g_slist_next(search)) {
+        if (g_str_equal (sender, (const char*)search->data))
+            break;
+    }
+    if (!search)
+        g_data->clients = g_slist_append (g_data->clients, g_strdup (sender));
 
     // Reply internal event_id immediately
     dbusif_ack (connection, msg, event_id);
 
-    n_proplist_set_uint (properties, NGF_DBUS_PROPERTY, event_id);
+    n_proplist_set_uint (properties, NGF_DBUS_PROPERTY_ID, event_id);
+    n_proplist_set_string (properties, NGF_DBUS_PROPERTY_NAME, sender);
     request = n_request_new_with_event_and_properties (event, properties);
     n_input_interface_play_request (iface, request);
     n_proplist_free (properties);
@@ -266,7 +286,7 @@ dbusif_lookup_request (NInputInterface *iface, uint32_t event_id)
         if (!properties)
             continue;
 
-        match_id = n_proplist_get_uint (properties, NGF_DBUS_PROPERTY);
+        match_id = n_proplist_get_uint (properties, NGF_DBUS_PROPERTY_ID);
         if (match_id == event_id)
             return request;
     }
@@ -290,6 +310,35 @@ dbusif_stop_all (NInputInterface *iface)
     for (iter = g_list_first (active_requests); iter; iter = g_list_next (iter)) {
         request = (NRequest*) iter->data;
         n_input_interface_stop_request (iface, request, 0);
+    }
+}
+
+static void
+dbusif_stop_by_name (NInputInterface *iface, const char *client_name)
+{
+    g_assert (iface != NULL);
+    g_assert (client_name);
+
+    NCore     *core            = NULL;
+    NRequest  *request         = NULL;
+    GList     *active_requests = NULL;
+    GList     *iter            = NULL;
+    const gchar *match_name    = NULL;
+    NProplist *properties      = NULL;
+
+    core = n_input_interface_get_core (iface);
+    active_requests = n_core_get_requests (core);
+
+    for (iter = g_list_first (active_requests); iter; iter = g_list_next (iter)) {
+        request = (NRequest*) iter->data;
+
+        properties = (NProplist*) n_request_get_properties (request);
+        if (!properties)
+            continue;
+
+        match_name = n_proplist_get_string (properties, NGF_DBUS_PROPERTY_NAME);
+        if (match_name && g_str_equal (match_name, client_name))
+            n_input_interface_stop_request (iface, request, 0);
     }
 }
 
@@ -386,6 +435,47 @@ fail:
     return DBUS_HANDLER_RESULT_HANDLED;
 }
 
+static void
+dbusif_disconnect_handler (NInputInterface *iface, const gchar *client)
+{
+    GSList          *search    = NULL;
+
+    g_assert (iface);
+    g_assert (client);
+
+    for (search = g_data->clients; search; search = g_slist_next(search)) {
+        if (g_str_equal (client, (const gchar*)search->data))
+            break;
+    }
+
+    if (search) {
+        g_data->clients = g_slist_remove_link (g_data->clients, search);
+        g_free (search->data);
+        g_slist_free (search);
+
+        N_INFO (LOG_CAT ">> client disconnect (%s)", client);
+        dbusif_stop_by_name (iface, client);
+    }
+}
+
+static DBusHandlerResult
+dbusif_introspect_handler (DBusConnection *connection, DBusMessage *msg)
+{
+
+    N_DEBUG (LOG_CAT "Introspect was called!");
+
+    DBusMessage *reply = NULL;
+
+    reply = dbus_message_new_method_return (msg);
+    if (reply) {
+        dbus_message_append_args (reply, DBUS_TYPE_STRING, &dbus_plugin_introspect_string, DBUS_TYPE_INVALID);
+        dbus_connection_send (connection, reply, NULL);
+        dbus_message_unref (reply);
+    }
+
+    return DBUS_HANDLER_RESULT_HANDLED;
+}
+
 static DBusHandlerResult
 dbusif_message_function (DBusConnection *connection, DBusMessage *msg,
                          void *userdata)
@@ -412,7 +502,8 @@ dbusif_message_function (DBusConnection *connection, DBusMessage *msg,
             if (component && g_str_equal (component, "org.freedesktop.ohm")) {
                 N_INFO (LOG_CAT "Ohmd restarted, stopping all requests");
                 dbusif_stop_all (iface);
-            }
+            } else if (component)
+                dbusif_disconnect_handler (iface, component);
         }
 
         return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
@@ -420,6 +511,9 @@ dbusif_message_function (DBusConnection *connection, DBusMessage *msg,
 
     if (member == NULL)
         return DBUS_HANDLER_RESULT_HANDLED;
+
+    if (dbus_message_has_interface (msg, "org.freedesktop.DBus.Introspectable"))
+        return dbusif_introspect_handler (connection, msg);
 
     if (!dbus_message_has_interface (msg, NGF_DBUS_IFACE))
         return DBUS_HANDLER_RESULT_HANDLED;
@@ -475,10 +569,8 @@ dbusif_initialize (NInputInterface *iface)
         NGF_DBUS_PATH, &method, iface))
         return FALSE;
 
-    /* Monitor for ohmd restarts */
-    dbus_bus_add_match (g_data->connection,
-    "type='signal',sender='org.freedesktop.DBus',member='NameOwnerChanged',arg0='org.freedesktop.ohm'",
-       NULL);
+    /* Monitor for ohmd restarts and disconnecting clients*/
+    dbus_bus_add_match (g_data->connection, DBUS_CLIENT_MATCH, NULL);
     dbus_connection_add_filter (g_data->connection, dbusif_message_function, iface, NULL);
 
     return TRUE;
@@ -521,7 +613,7 @@ dbusif_send_reply (NInputInterface *iface, NRequest *request, int code)
     (void) iface;
 
     props  = n_request_get_properties (request);
-    event_id = n_proplist_get_uint ((NProplist*) props, NGF_DBUS_PROPERTY);
+    event_id = n_proplist_get_uint ((NProplist*) props, NGF_DBUS_PROPERTY_ID);
     status = code;
 
     if (event_id == 0)
