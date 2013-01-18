@@ -102,6 +102,18 @@ fi
 
 AM_CONDITIONAL(BUILD_DBUS, test x$enable_dbus = xyes)
 
+# FF memless plugin
+AC_CHECK_HEADERS([linux/input.h sys/ioctl.h], [has_ffm=yes], [has_ffm=no])
+AC_SUBST(FFMEMLESS_CFLAGS, "")
+AC_SUBST(FFMEMLESS_LIBS, "")
+
+if test x$has_ffm = xyes; then
+    enable_ffm=yes
+else
+    enable_ffm=no
+fi
+AM_CONDITIONAL(BUILD_FFMEMLESS, test x$enable_ffm = xyes)
+
 # GStreamer plugin
 
 PKG_CHECK_MODULES(GST, gstreamer-0.10 gstreamer-controller-0.10, [has_gst=yes], [has_gst=no])
@@ -202,6 +214,7 @@ src/include/ngf/Makefile
 src/plugins/Makefile
 src/plugins/fake/Makefile
 src/plugins/dbus/Makefile
+src/plugins/ffmemless/Makefile
 src/plugins/transform/Makefile
 src/plugins/mce/Makefile
 src/plugins/immvibe/Makefile
