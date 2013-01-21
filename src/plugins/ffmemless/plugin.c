@@ -312,9 +312,9 @@ static int ffm_setup_effects(const NProplist *props, GHashTable *effects)
 
 		value = ffm_get_str_value(props, key, "_DIRECTION");
 		if (!g_strcmp0(value, "reverse"))
-				ff.direction = 0xC000;	/* reverse */
+			ff.direction = FF_DIR_REVERSE;
 		else
-			ff.direction = 0x4000;	/* forward */
+			ff.direction = FF_DIR_FORWARD;
 
 		/* Fill effect type dependent parameters */
 		if (ff.type == FF_RUMBLE) {
