@@ -32,10 +32,12 @@
 #define LOG_CAT "ffmemless: "
 #define FFM_PLUGIN_NAME		"ffmemless"
 
+#define FFM_KEY			"plugin.ffmemless.data"
 #define FFM_SYSTEM_CONFIG_FILE	"system_effects_file"
 #define FFM_DEVFILE_KEY		"device_file_path"
 #define FFM_EFFECTLIST_KEY	"supported_effects"
 #define FFM_EFFECT_KEY		"ffmemless.effect"
+#define FFM_SOUND_REPEAT_KEY	"sound.repeat"
 #define FFM_EFFECT_PREFIX	"NGF_"
 #define FFM_MAX_PARAM_LEN	80
 #define FFM_DEFAULT_EFFECT	"NGF_DEFAULT"
@@ -49,6 +51,15 @@
 N_PLUGIN_NAME(FFM_PLUGIN_NAME)
 N_PLUGIN_DESCRIPTION("Vibra plugin using ff-memless kernel backend")
 N_PLUGIN_VERSION("0.9")
+
+struct ffm_effect_data {
+	NRequest       *request;
+	NSinkInterface *iface;
+	int id;
+	int repeat;
+	guint playback_time;
+	int poll_id;
+};
 
 static struct ffm_data {
 	int 		dev_file;
@@ -107,8 +118,9 @@ static int ffm_get_int_value(const NProplist *props, const char *prefix,
 	int result;
 
 	value = ffm_get_str_value(props, prefix, key);
+	N_DEBUG (LOG_CAT "For %s%s got value %s", prefix, key, value);
 	if (value == NULL)
-		result = 0;
+		result = min;
 	else
 		result = atoi(value);
 
@@ -184,7 +196,7 @@ static GHashTable *ffm_new_effect_list(const char *effect_data)
 	GHashTable *list = NULL;
 	gchar **effect_names;
 	int i = 0;
-	gint16 *id;
+	struct ffm_effect_data *data;
 
 	if (!effect_data) {
 		N_WARNING (LOG_CAT "NULL effect_data pointer");
@@ -203,10 +215,11 @@ static GHashTable *ffm_new_effect_list(const char *effect_data)
 					g_free, g_free);
 
 	for (i = 0; effect_names[i] != NULL; i++) {
-		/* Add effect key to effect list with initial value -1 */
-		id = g_new(gint16, 1);
-		*id = -1;
-		g_hash_table_insert(list, strdup(effect_names[i]), id);
+		/* Add effect key to effect list with initial data */
+		data = g_new(struct ffm_effect_data, 1);
+		data->id = -1;
+		data->repeat = 1;
+		g_hash_table_insert(list, strdup(effect_names[i]), data);
 	}
 
 ffm_effect_list_done:
@@ -219,18 +232,20 @@ ffm_effect_list_done:
 static int ffm_setup_default_effect(GHashTable *effects, int dev_fd)
 {
 	struct ff_effect ff;
-	gint16 *id;
+	struct ffm_effect_data *data;
 
 	memset(&ff, 0, sizeof(struct ff_effect));
-	id = (gint16 *)g_hash_table_lookup(effects, FFM_DEFAULT_EFFECT);
-	if (!id) {
-		id = g_new(gint16, 1);
-		*id = -1;
+	data = (struct ffm_effect_data *)g_hash_table_lookup(effects,
+							FFM_DEFAULT_EFFECT);
+	if (!data) {
+		data = g_new(struct ffm_effect_data, 1);
+		data->id = -1;
+		data->id = 1;
 		ff.id = -1;
 		g_hash_table_insert(effects, g_strdup(FFM_DEFAULT_EFFECT),
-				id);
+				data);
 	} else {
-		ff.id = *id;
+		ff.id = data->id;
 	}
 
 	ff.type = FF_RUMBLE;
@@ -241,8 +256,8 @@ static int ffm_setup_default_effect(GHashTable *effects, int dev_fd)
 		N_DEBUG (LOG_CAT "%s effect load failed", FFM_DEFAULT_EFFECT);
 		return -1;
 	}
-	*id = ff.id;
-	N_DEBUG (LOG_CAT "Added effect %s, id %d", FFM_DEFAULT_EFFECT, *id);
+	data->id = ff.id;
+	N_DEBUG (LOG_CAT "Added effect %s, id %d", FFM_DEFAULT_EFFECT, ff.id);
 	return 0;
 }
 
@@ -255,7 +270,7 @@ static int ffm_setup_effects(const NProplist *props, GHashTable *effects)
 	const char *value;
 	char *key;
 	struct ff_effect ff;
-	gint16 *id;
+	struct ffm_effect_data *data;
 	GHashTableIter iter;
 
 	if(!effects || !props) {
@@ -271,9 +286,10 @@ static int ffm_setup_effects(const NProplist *props, GHashTable *effects)
 	g_hash_table_iter_init(&iter, effects);
 
 	/* Create and load all configured effects */
-	while (g_hash_table_iter_next(&iter, (gpointer) &key, (gpointer) &id)) {
+	while (g_hash_table_iter_next(&iter, (gpointer) &key,
+							(gpointer) &data)) {
 		memset(&ff, 0, sizeof(struct ff_effect));
-		N_DEBUG (LOG_CAT "got key %s, id %d", key, *id);
+		N_DEBUG (LOG_CAT "got key %s, id %d", key, data->id);
 
 		value = ffm_get_str_value(props, key, "_TYPE");
 		if (!value) {
@@ -294,7 +310,7 @@ static int ffm_setup_effects(const NProplist *props, GHashTable *effects)
 			continue;
 		}
 
-		ff.id = *id;
+		ff.id = data->id;
 
 		N_DEBUG (LOG_CAT "Creating / updating effect %s", key);
 
@@ -306,6 +322,9 @@ static int ffm_setup_effects(const NProplist *props, GHashTable *effects)
 				NGF_DEFAULT_DURATION);
 			ff.replay.length = NGF_DEFAULT_DURATION;
 		}
+
+		data->repeat = ffm_get_int_value(props, key, "_REPEAT", 1,
+								 INT32_MAX);
 
 		ff.replay.delay = ffm_get_int_value(props, key,
 						"_DELAY", 0, UINT16_MAX);
@@ -393,8 +412,11 @@ static int ffm_setup_effects(const NProplist *props, GHashTable *effects)
 			goto ffm_eff_error1;
 		}
 		/* If the id was -1, kernel has updated it with valid value */
-		*id = ff.id;
-		N_DEBUG (LOG_CAT "Created effect %s with id %d", key, *id);
+		data->id = ff.id;
+		/* Calculate the playback time */
+		data->playback_time = data->repeat *
+					(ff.replay.delay + ff.replay.length);
+		N_DEBUG (LOG_CAT "Created effect %s with id %d", key, data->id);
 		N_DEBUG (LOG_CAT "Parameters:\n"
 			"type = 0x%x\n"
 			"length = %dms\n"
@@ -433,29 +455,36 @@ ffm_eff_error1:
 	return -1;
 }
 
-static int ffm_play(NRequest* request, int play)
+gboolean ffm_playback_done(gpointer userdata)
 {
-	const NProplist *props = n_request_get_properties (request);
-	gint16 *id;
-	const gchar *key;
+	struct ffm_effect_data *data = (struct ffm_effect_data *) userdata;
 
-	/* Check whether we are supposed to even play anything */
-	key = n_proplist_get_string(props, FFM_EFFECT_KEY);
-	if (!key) {
-		N_DEBUG (LOG_CAT "got NULL key");
-		return FALSE;
+	N_DEBUG (LOG_CAT "Effect id %d completed", data->id);
+
+	data->poll_id = 0;
+	n_sink_interface_complete(data->iface, data->request);
+	return FALSE;
+}
+
+static int ffm_play(struct ffm_effect_data *data, int play)
+{
+	data->poll_id = 0;
+
+	/* if there is playback time set, this is single shot effect */
+	if (play) {
+		if (data->playback_time) {
+			N_DEBUG (LOG_CAT "setting up completion timer");
+			data->poll_id = g_timeout_add(data->playback_time + 20,
+						ffm_playback_done, data);
+		}
+		N_DEBUG (LOG_CAT "Starting playback");
+	} else {
+		N_DEBUG (LOG_CAT "Stopping playback");
 	}
 
-	id = g_hash_table_lookup(ffm.effects, key);
-	/* Fall back to default effect, if the key did not match our effects */
-	if (id == NULL)
-		id = g_hash_table_lookup(ffm.effects, FFM_DEFAULT_EFFECT);
-
-	N_DEBUG (LOG_CAT "starting to play effect %s with id:%d", key, *id);
-	if (ffmemless_play(*id, ffm.dev_file, play))
+	if (ffmemless_play(data->id, ffm.dev_file, play))
 		return FALSE;
 
-	N_DEBUG (LOG_CAT "Succesfully started playback");
 	return TRUE;
 }
 
@@ -499,34 +528,96 @@ static int ffm_sink_can_handle(NSinkInterface *iface, NRequest *request)
 }
 static int ffm_sink_prepare(NSinkInterface *iface, NRequest *request)
 {
+	const NProplist *props = n_request_get_properties (request);
+	const struct ffm_effect_data *data;
+	struct ffm_effect_data *copy;
+	gboolean repeat;
+	const gchar *key;
 	(void) iface;
 	(void) request;
 
-	n_sink_interface_synchronize (iface, request);
 	N_DEBUG (LOG_CAT "prepare");
+
+	key = n_proplist_get_string(props, FFM_EFFECT_KEY);
+	if (key == NULL) {
+		N_DEBUG (LOG_CAT "no effect key found for this event");
+		return FALSE;
+	}
+
+	data = g_hash_table_lookup(ffm.effects, key);
+
+	/* Fall back to default effect, if the key did not match our effects */
+	if (data == NULL)
+		data = g_hash_table_lookup(ffm.effects, FFM_DEFAULT_EFFECT);
+
+	/* creating copy of the data as we need to alter it for this event */
+	copy = g_new(struct ffm_effect_data, 1);
+	copy->id = data->id;
+	copy->repeat = data->repeat;
+	copy->iface = iface;
+	copy->request = request;
+	copy->playback_time = data->playback_time;
+
+	repeat = n_proplist_get_bool (props, FFM_SOUND_REPEAT_KEY);
+	if (repeat) {
+		copy->repeat = INT32_MAX; /* repeat to "infinity" */
+		copy->playback_time = 0; /* don't report playback done */
+	}
+
+	N_DEBUG (LOG_CAT "prep effect %s, repeat %d times", key, copy->repeat);
+
+	n_request_store_data(request, FFM_KEY, copy);
+	n_sink_interface_synchronize(iface, request);
+
 	return TRUE;
 }
 static int ffm_sink_play(NSinkInterface *iface, NRequest *request)
 {
+	struct ffm_effect_data *data;
 	(void) iface;
+
 	N_DEBUG (LOG_CAT "play");
 
-	return ffm_play(request, 1);
+	data = (struct ffm_effect_data *)n_request_get_data (request, FFM_KEY);
+
+	N_DEBUG (LOG_CAT "play id %d, repeat %d times, iface 0x%x, "
+			 "req 0x%x data 0x%x", data->id, data->repeat,
+			data->iface, data->request, data);
+
+	return ffm_play(data, data->repeat);
 }
 static int ffm_sink_pause(NSinkInterface *iface, NRequest *request)
 {
+	struct ffm_effect_data *data;
 	(void) iface;
+
 	N_DEBUG (LOG_CAT "pause");
 
+	data = (struct ffm_effect_data *)n_request_get_data (request, FFM_KEY);
+
+	if (data->poll_id) {
+		g_source_remove (data->poll_id);
+		data->poll_id = 0;
+	}
+
 	/* no pause possible for vibra effects, just stop */
-	return ffm_play(request, 0);
+	return ffm_play(data, 0);
 }
 static void ffm_sink_stop(NSinkInterface *iface, NRequest *request)
 {
+	struct ffm_effect_data *data;
 	(void) iface;
 	N_DEBUG (LOG_CAT "stop");
 
-	ffm_play(request, 0);
+	data = (struct ffm_effect_data *)n_request_get_data (request, FFM_KEY);
+
+	if (data->poll_id) {
+		g_source_remove (data->poll_id);
+		data->poll_id = 0;
+	}
+
+	ffm_play(data, 0);
+	g_free(data);
 }
 
 N_PLUGIN_LOAD(plugin)
