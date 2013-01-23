@@ -478,6 +478,9 @@ query_current_values (NCore *core)
 
     /* fallbacks */
 
+    /* This is in a way a bug, since profiled doesn't expose fallback settings ever,
+     * but, when requesting non-existing profile, profile_get_values() returns
+     * fallback profile contents. */
     values = profile_get_values ("fallback");
     for (v = values; v->pv_key; ++v)
         update_context_value (context, "fallback", v->pv_key, v->pv_val);

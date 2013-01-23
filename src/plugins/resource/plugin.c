@@ -18,32 +18,59 @@
  * License along with this work; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
- 
+
+/*
+ * USAGE:
+ *
+ * Resource plugin looks for media.* properties in request proplist.
+ * 1) if no media.* is found in proplist, default for ENABLED for all
+ * sinks.
+ * 2) if media.foo is found in proplist, default for DISABLED for all
+ * sinks, and enable only those specifically enabled in proplist.
+ *
+ * *) media.audio, media.vibra, media.leds, media.backlight
+ *
+ * After enabled/disabled classification is done, drop all disabled
+ * sinks from request.
+ *
+ * resource.ini plugin configuration can be used to define which sinks
+ * correspond which resource_key, ie. to define gst sink as media.audio
+ * resource:
+ *
+ * [resource]
+ * media.audio = gst
+ *
+ */
+
+#include <string.h>
 #include <ngf/plugin.h>
 #include <ngf/sinkinterface.h>
 
 #define LOG_CAT "resource: "
 
 N_PLUGIN_NAME        ("resource")
-N_PLUGIN_VERSION     ("0.1")
+N_PLUGIN_VERSION     ("0.2")
 N_PLUGIN_DESCRIPTION ("Resource rules")
 
-#define RES_AUDIO  0
-#define RES_VIBRA  1
-#define RES_LEDS   2
-#define RES_BLIGHT 3
+enum resource_key_index {
+    RES_AUDIO   = 0,
+    RES_VIBRA   = 1,
+    RES_LEDS    = 2,
+    RES_BLIGHT  = 3,
+    RES_COUNT
+};
 
-static const char *resource_keys[] = {
+static const char *resource_keys[RES_COUNT] = {
     [RES_AUDIO] = "media.audio",
     [RES_VIBRA] = "media.vibra",
     [RES_LEDS]  = "media.leds",
-    [RES_BLIGHT] = "media.blight"
+    [RES_BLIGHT] = "media.backlight"
 };
 
 #define ARRAY_SIZE(x) (sizeof ((x)) / sizeof ((x)[0]))
 
 static gboolean        resource_map_enabled = FALSE;
-static NSinkInterface *sink_map[4];
+static NSinkInterface *sink_map[RES_COUNT];
 
 static NSinkInterface*
 lookup_sink_from_key (NCore *core, const char *key)
@@ -93,33 +120,18 @@ init_done_cb (NHook *hook, void *data, void *userdata)
         resource_map_enabled = TRUE;
 }
 
-static int
-find_sink_index_from_sink_map (NSinkInterface *sink)
-{
-    unsigned int i;
-
-    for (i = 0; i < ARRAY_SIZE (sink_map); ++i) {
-        if (sink_map[i] == sink)
-            return (int) i;
-    }
-
-    return -1;
-}
-
 static void
 filter_sinks_cb (NHook *hook, void *data, void *userdata)
 {
-    GList                    *iter   = NULL;
-    NSinkInterface           *sink   = NULL;
     NProplist                *props  = NULL;
     NCoreHookFilterSinksData *filter = (NCoreHookFilterSinksData*) data;
 
     (void) hook;
     (void) userdata;
 
-    int index   = -1;
-    int enabled = 0;
-    GList *remove_list = NULL;
+    unsigned int index;
+    int force_enabled = 0;
+    int enabled[RES_COUNT];
 
     if (!resource_map_enabled) {
         N_DEBUG (LOG_CAT "filtering sinks by resource is disabled.");
@@ -129,34 +141,31 @@ filter_sinks_cb (NHook *hook, void *data, void *userdata)
     N_DEBUG (LOG_CAT "filter sinks for request '%s'",
         n_request_get_name (filter->request));
 
-    props = (NProplist*) n_request_get_properties (filter->request);
-    for (iter = g_list_first (filter->sinks); iter; iter = g_list_next (iter)) {
-        sink = (NSinkInterface*) iter->data;
+    memset (enabled, 0, sizeof(enabled));
 
-        index = find_sink_index_from_sink_map (sink);
-        if (index < 0)
+    props = (NProplist*) n_request_get_properties (filter->request);
+
+    for (index = 0; index < ARRAY_SIZE(enabled); index++) {
+        if (n_proplist_has_key (props, resource_keys[index])) {
+            force_enabled = 1;
+            enabled[index] = n_proplist_get_bool (props, resource_keys[index]);
+        }
+    }
+
+    for (index = 0; index < ARRAY_SIZE(enabled); index++) {
+
+        if (!sink_map[index])
             continue;
 
-        enabled = n_proplist_get_bool (props, resource_keys[index]);
-
-        N_DEBUG (LOG_CAT "resource %s for '%s' with sink '%s'",
-            enabled ? "enabled" : "disabled",
+        N_DEBUG (LOG_CAT "resource %s%s for '%s' with sink '%s'",
+            force_enabled ? "forced " : "",
+            force_enabled && !enabled[index] ? "disabled" : "enabled",
             resource_keys[index],
             n_sink_interface_get_name (sink_map[index]));
 
-        if (!enabled)
-            remove_list = g_list_append (remove_list, sink);
+        if (force_enabled && !enabled[index])
+            filter->sinks = g_list_remove (filter->sinks, sink_map[index]);
     }
-
-    if (!remove_list)
-        return;
-
-    for (iter = g_list_first (remove_list); iter; iter = g_list_next (iter)) {
-        sink = (NSinkInterface*) iter->data;
-        filter->sinks = g_list_remove (filter->sinks, sink);
-    }
-
-    g_list_free (remove_list);
 }
 
 N_PLUGIN_LOAD (plugin)
