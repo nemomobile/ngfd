@@ -33,7 +33,7 @@
 #define FFM_PLUGIN_NAME		"ffmemless"
 
 #define FFM_KEY			"plugin.ffmemless.data"
-#define FFM_SYSTEM_CONFIG_FILE	"system_effects_file"
+#define FFM_SYSTEM_CONFIG_KEY	"system_effects_env"
 #define FFM_DEVFILE_KEY		"device_file_path"
 #define FFM_EFFECTLIST_KEY	"supported_effects"
 #define FFM_EFFECT_KEY		"ffmemless.effect"
@@ -146,6 +146,10 @@ static NProplist* ffm_read_props(const char *file_name)
 	GError     *error     = NULL;
 	gchar      *value     = NULL;
 
+	if (!file_name) {
+		N_DEBUG (LOG_CAT "NULL file_name parameter, cannot read props");
+		return NULL;
+	}
 	keyfile   = g_key_file_new ();
 
 	N_DEBUG (LOG_CAT "Loading properties from file \"%s\"", file_name);
@@ -623,6 +627,7 @@ static void ffm_sink_stop(NSinkInterface *iface, NRequest *request)
 N_PLUGIN_LOAD(plugin)
 {
 	const NProplist *props = n_plugin_get_params(plugin);
+	const gchar *system_settings_file;
 
 	N_DEBUG (LOG_CAT "plugin load");
 
@@ -638,8 +643,9 @@ N_PLUGIN_LOAD(plugin)
 	};
 
 	ffm.ngfd_props = props;
-	ffm.sys_props = ffm_read_props(n_proplist_get_string(props,
-						FFM_SYSTEM_CONFIG_FILE));
+	system_settings_file = g_getenv(n_proplist_get_string(props,
+						FFM_SYSTEM_CONFIG_KEY));
+	ffm.sys_props = ffm_read_props(system_settings_file);
 
 	n_proplist_dump(ffm.ngfd_props);
 	if (ffm.sys_props)
