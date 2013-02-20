@@ -317,7 +317,7 @@ n_core_initialize (NCore *core)
 
     /* check for required plugins. */
 
-    if (!core->required_plugins) {
+    if (!core->required_plugins && !core->optional_plugins) {
         N_ERROR (LOG_CAT "no plugins to load defined in configuration");
         goto failed_init;
     }
@@ -329,11 +329,21 @@ n_core_initialize (NCore *core)
 
     /* load all plugins */
 
+    /* first mandatory plugins */
     for (p = g_list_first (core->required_plugins); p; p = g_list_next (p)) {
         if (!(plugin = n_core_load_plugin (core, (const char*) p->data)))
             goto failed_init;
 
         core->plugins = g_list_append (core->plugins, plugin);
+    }
+
+    /* then optional plugins */
+    for (p = g_list_first (core->optional_plugins); p; p = g_list_next (p)) {
+        if ((plugin = n_core_load_plugin (core, (const char*) p->data)))
+            core->plugins = g_list_append (core->plugins, plugin);
+
+        if (!plugin)
+            N_INFO (LOG_CAT "optional plugin %s not loaded.", p->data);
     }
 
     /* setup the sink priorities based on the sink-order */
@@ -422,6 +432,12 @@ n_core_shutdown (NCore *core)
         g_list_foreach (core->required_plugins, (GFunc) g_free, NULL);
         g_list_free (core->required_plugins);
         core->required_plugins = NULL;
+    }
+
+    if (core->optional_plugins) {
+        g_list_foreach (core->optional_plugins, (GFunc) g_free, NULL);
+        g_list_free (core->optional_plugins);
+        core->optional_plugins = NULL;
     }
 
     core->shutdown_done = TRUE;
@@ -686,6 +702,17 @@ n_core_parse_sink_order (NCore *core, GKeyFile *keyfile)
     g_strfreev (sink_list);
 }
 
+static void
+parse_plugins (gchar **plugins, GList **list)
+{
+    g_assert (plugins);
+
+    gchar    **item       = NULL;
+
+    for (item = plugins; *item; ++item)
+        *list = g_list_append (*list, g_strdup (*item));
+}
+
 static int
 n_core_parse_configuration (NCore *core)
 {
@@ -696,7 +723,6 @@ n_core_parse_configuration (NCore *core)
     GError    *error      = NULL;
     gchar     *filename   = NULL;
     gchar    **plugins    = NULL;
-    gchar    **item       = NULL;
 
     filename = g_build_filename (core->conf_path, DEFAULT_CONF_FILENAME, NULL);
     keyfile  = g_key_file_new ();
@@ -712,13 +738,14 @@ n_core_parse_configuration (NCore *core)
     N_DEBUG (LOG_CAT "parsing configuration file '%s'", filename);
 
     /* parse the required plugins. */
+    if ((plugins = g_key_file_get_string_list (keyfile, "general", "plugins", NULL, NULL)) != NULL) {
+        parse_plugins (plugins, &core->required_plugins);
+        g_strfreev (plugins);
+    }
 
-    plugins = g_key_file_get_string_list (keyfile, "general", "plugins", NULL, NULL);
-    if (plugins) {
-        for (item = plugins; *item; ++item) {
-            core->required_plugins = g_list_append (core->required_plugins,
-                g_strdup (*item));
-        }
+    /* parse the optional plugins. */
+    if ((plugins = g_key_file_get_string_list (keyfile, "general", "plugins-optional", NULL, NULL)) != NULL) {
+        parse_plugins (plugins, &core->optional_plugins);
         g_strfreev (plugins);
     }
 

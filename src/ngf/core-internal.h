@@ -40,6 +40,7 @@ struct _NCore
     gchar            *plugin_path;          /* plugin path */
 
     GList            *required_plugins;     /* plugins to load (required) */
+    GList            *optional_plugins;     /* plugins to load (loading may fail, and won't disturb operation) */
     GList            *plugins;              /* NPlugin* */
 
     NSinkInterface  **sinks;                /* sink interfaces registered */
