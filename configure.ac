@@ -128,6 +128,19 @@ fi
 
 AM_CONDITIONAL(BUILD_GST, test x$enable_gst = xyes)
 
+# libcanberra plugin
+PKG_CHECK_MODULES(CANBERRA, libcanberra, [has_canberra=yes], [has_canberra=no])
+AC_SUBST(CANBERRA_CFLAGS)
+AC_SUBST(CANBERRA_LIBS)
+
+if test x$has_canberra = xyes; then
+    enable_canberra=yes
+else
+    enable_canberra=no
+fi
+
+AM_CONDITIONAL(BUILD_CANBERRA, test x$enable_canberra = xyes)
+
 # Immvibe plugin
 
 AC_CHECK_HEADERS([ImmVibe.h ImmVibeCore.h ImmVibeOS.h], [has_immvibe=yes], [has_immvibe=no])
@@ -198,6 +211,7 @@ echo "
 
     DBus plugin:            ${enable_dbus}
     GStreamer plugin:       ${enable_gst}
+    Canberra plugin:        ${enable_canberra}
     Immvibe plugin:         ${enable_immvibe}
     Profile plugin:         ${enable_profile}
     MCE plugin:             ${enable_mce}
@@ -223,6 +237,7 @@ src/plugins/profile/Makefile
 src/plugins/streamrestore/Makefile
 src/plugins/tonegen/Makefile
 src/plugins/gst/Makefile
+src/plugins/canberra/Makefile
 src/plugins/callstate/Makefile
 doc/Makefile
 data/Makefile

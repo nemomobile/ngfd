@@ -32,3 +32,7 @@ endif
 if BUILD_GST
 SUBDIRS += gst
 endif
+
+if BUILD_CANBERRA
+SUBDIRS += canberra
+endif

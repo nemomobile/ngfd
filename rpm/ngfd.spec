@@ -23,6 +23,7 @@ BuildRequires:  pkgconfig(gthread-2.0)
 BuildRequires:  pkgconfig(check)
 BuildRequires:  pkgconfig(mce)
 BuildRequires:  pkgconfig(profile)
+BuildRequires:  pkgconfig(libcanberra)
 BuildRequires:  doxygen
 
 %description
@@ -101,6 +102,7 @@ fi
 %{_libdir}/ngf/libngfd_resource.so
 %{_libdir}/ngf/libngfd_transform.so
 %{_libdir}/ngf/libngfd_gst.so
+%{_libdir}/ngf/libngfd_canberra.so
 %{_libdir}/ngf/libngfd_mce.so
 %{_libdir}/ngf/libngfd_streamrestore.so
 %{_libdir}/ngf/libngfd_tonegen.so
