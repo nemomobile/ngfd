@@ -64,6 +64,14 @@ Requires:   %{name} = %{version}-%{release}
 %description plugin-doc
 This package contains documentation to header files for creating plugins to non-graphical feedback daemon.
 
+%package tests
+Summary:    Test suite for ngfd
+Group:      System/Daemons
+Requires:   %{name} = %{version}-%{release}
+
+%description tests
+This package contains test suite for ngfd.
+
 %prep
 %setup -q -n %{name}-%{version}
 
@@ -132,3 +140,7 @@ fi
 %defattr(-,root,root,-)
 %doc COPYING
 %{_docdir}/ngfd-plugin/html/*
+
+%files tests
+%defattr(-,root,root,-)
+/opt/tests/ngfd/*

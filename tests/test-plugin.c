@@ -150,9 +150,17 @@ END_TEST
 
 START_TEST (test_load_plugin)
 {
-    const char *plugin_path = "./libngfd_test_fake.la";
     NCore *core = n_core_new (NULL, NULL);
     fail_unless (core != NULL);
+
+    /* allow execution inside build tree */
+    const char *build_tree_plugin_path = "./libngfd_test_fake.la";
+    gchar *plugin_path = NULL;
+    if (g_file_test (build_tree_plugin_path, G_FILE_TEST_EXISTS)) {
+        plugin_path = g_strdup (build_tree_plugin_path);
+    } else {
+        plugin_path = g_build_filename (core->plugin_path, "libngfd_test_fake.so", NULL);
+    }
 
     NPlugin *loaded_plugin = NULL;
     /* try to load not existing plugin file */
@@ -193,6 +201,8 @@ START_TEST (test_load_plugin)
     /* it will also unload plugin and free plugin structre*/
     n_core_free (core);
     core = NULL;
+
+    g_free (plugin_path);
 }
 END_TEST
 

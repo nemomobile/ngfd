@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<testdefinition version="0.1">
+
+    <suite name="ngfd">
+
+        <set name="ngfd">
+
+            <description>ngfd unit tests</description>
+
+            <case name="test-value">
+                <description>Tests value module</description>
+                <step>/opt/tests/ngfd/test-value</step>
+            </case>
+
+            <case name="test-request">
+                <description>Tests request module</description>
+                <step>/opt/tests/ngfd/test-request</step>
+            </case>
+
+            <case name="test-proplist">
+                <description>Tests proplist module</description>
+                <step>/opt/tests/ngfd/test-proplist</step>
+            </case>
+
+            <case name="test-context">
+                <description>Tests context module</description>
+                <step>/opt/tests/ngfd/test-context</step>
+            </case>
+
+            <case name="test-core">
+                <description>Tests core module</description>
+                <step>/opt/tests/ngfd/test-core</step>
+            </case>
+
+            <case name="test-inputinterface">
+                <description>Tests inputinterface module</description>
+                <step>/opt/tests/ngfd/test-inputinterface</step>
+            </case>
+
+            <case name="test-plugin">
+                <description>Tests plugin module</description>
+                <step>/opt/tests/ngfd/test-plugin</step>
+            </case>
+
+            <case name="test-sinkinterface">
+                <description>Tests sinkinterface module</description>
+                <step>/opt/tests/ngfd/test-sinkinterface</step>
+            </case>
+
+        </set>
+
+    </suite>
+
+</testdefinition>

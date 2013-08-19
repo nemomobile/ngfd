@@ -76,6 +76,8 @@ AC_SUBST(NGFD_CONF_DIR, "\$(datadir)/ngfd")
 AC_SUBST(NGFD_PLUGIN_CONF_DIR, "\$(NGFD_CONF_DIR)/plugins.d")
 AC_SUBST(NGFD_PLUGIN_DIR, "\$(libdir)/ngf")
 
+AC_SUBST(NGFD_TESTS_DIR, "/opt/tests/ngfd")
+
 # Debug flag.
 
 AC_ARG_ENABLE([debug],

@@ -8,7 +8,8 @@ TESTS = \
        test-plugin \
        test-sinkinterface
 
-check_PROGRAMS = \
+testsdir = @NGFD_TESTS_DIR@
+tests_PROGRAMS = \
        test-value \
        test-request \
        test-proplist \
@@ -17,6 +18,9 @@ check_PROGRAMS = \
        test-inputinterface \
        test-plugin \
        test-sinkinterface
+
+tests_DATA = \
+       tests.xml
 
 INCLUDES = -I$(top_srcdir)/src/include
 
