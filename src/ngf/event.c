@@ -147,7 +147,7 @@ n_event_parse_properties (GKeyFile *keyfile, const char *group,
 
     key_list = g_key_file_get_keys (keyfile, group, NULL, NULL);
     for (key = key_list; *key; ++key) {
-        key_type = (int) g_hash_table_lookup (keytypes, *key);
+        key_type = GPOINTER_TO_INT(g_hash_table_lookup (keytypes, *key));
 
         switch (key_type) {
             case N_VALUE_TYPE_INT:

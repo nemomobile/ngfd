@@ -273,7 +273,7 @@ n_value_to_string (const NValue *value)
             break;
 
         case N_VALUE_TYPE_POINTER:
-            result = g_strdup_printf ("0x%X (pointer)", (unsigned int) value->value.p);
+            result = g_strdup_printf ("0x%p (pointer)", value->value.p);
             break;
 
         default:

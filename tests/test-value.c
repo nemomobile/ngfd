@@ -276,7 +276,7 @@ START_TEST (test_to_string)
 
     n_value_set_pointer (value, point);
     string = n_value_to_string (value);
-    expected = g_strdup_printf ("0x%X (pointer)", (unsigned int)point);
+    expected = g_strdup_printf ("0x%p (pointer)", point);
     fail_unless (g_strcmp0 (string, expected) == 0);
     g_free (string);
     g_free (expected);

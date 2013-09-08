@@ -671,7 +671,7 @@ n_core_parse_keytypes (NCore *core, GKeyFile *keyfile)
         }
 
         N_DEBUG (LOG_CAT "new key type '%s' = %s", *key, value);
-        g_hash_table_replace (core->key_types, g_strdup (*key), (gpointer) key_type);
+        g_hash_table_replace (core->key_types, g_strdup (*key), GINT_TO_POINTER(key_type));
         g_free (value);
     }
 
@@ -913,7 +913,7 @@ n_core_connect (NCore *core, NCoreHook hook, int priority,
     if (hook >= N_CORE_HOOK_LAST)
         return FALSE;
 
-    N_DEBUG (LOG_CAT "0x%X connected to hook '%s'", (unsigned int) callback,
+    N_DEBUG (LOG_CAT "0x%p connected to hook '%s'", callback,
         n_core_hook_to_string (hook));
 
     n_hook_connect (&core->hooks[hook], priority, callback, userdata);
