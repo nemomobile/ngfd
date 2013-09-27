@@ -495,14 +495,45 @@ static int ffm_play(struct ffm_effect_data *data, int play)
 static int ffm_sink_initialize(NSinkInterface *iface)
 {
 	(void) iface;
-	(void) ffm;
+
+	if (ffm_setup_device(ffm.ngfd_props, &ffm.dev_file)) {
+		N_ERROR (LOG_CAT "Could not find a device file");
+		goto ffm_init_error1;
+	}
+
+	ffm.effects = ffm_new_effect_list(n_proplist_get_string(ffm.ngfd_props,
+							FFM_EFFECTLIST_KEY));
+
+	if (ffm_setup_default_effect(ffm.effects, ffm.dev_file)) {
+		N_ERROR (LOG_CAT "Could not load default fall-back effect");
+		goto ffm_init_error2;
+	}
+	/* Setup effects defined in ngfd internal ini file, this must pass. */
+	if (ffm_setup_effects(ffm.ngfd_props, ffm.effects)) {
+		N_ERROR (LOG_CAT "Could not load ngfd effects");
+		goto ffm_init_error2;
+	}
+	/*
+	 * Setup effects defined in system level ini file, this is ok to fail.
+	 * If there are effects with same name, they get overwritten.
+	 */
+	if (ffm_setup_effects(ffm.sys_props, ffm.effects)) {
+		N_DEBUG (LOG_CAT "No system level effect settings");
+	}
 
 	return TRUE;
+
+ffm_init_error2:
+	g_hash_table_destroy(ffm.effects);
+	ffm_close_device(ffm.dev_file);
+ffm_init_error1:
+	return FALSE;
 }
 static void ffm_sink_shutdown(NSinkInterface *iface)
 {
 	(void) iface;
-
+	g_hash_table_destroy(ffm.effects);
+	ffm_close_device(ffm.dev_file);
 }
 
 static int ffm_sink_can_handle(NSinkInterface *iface, NRequest *request)
@@ -651,39 +682,9 @@ N_PLUGIN_LOAD(plugin)
 	if (ffm.sys_props)
 		n_proplist_dump(ffm.sys_props);
 
-	if (ffm_setup_device(ffm.ngfd_props, &ffm.dev_file)) {
-		N_ERROR (LOG_CAT "Could not find a device file");
-		goto ffm_load_error1;
-	}
-
-	ffm.effects = ffm_new_effect_list(n_proplist_get_string(ffm.ngfd_props,
-							FFM_EFFECTLIST_KEY));
-
-	if (ffm_setup_default_effect(ffm.effects, ffm.dev_file)) {
-		N_ERROR (LOG_CAT "Could not load default fall-back effect");
-		goto ffm_load_error2;
-	}
-	/* Setup effects defined in ngfd internal ini file, this must pass. */
-	if (ffm_setup_effects(ffm.ngfd_props, ffm.effects)) {
-		N_ERROR (LOG_CAT "Could not load ngfd effects");
-		goto ffm_load_error2;
-	}
-	/*
-	 * Setup effects defined in system level ini file, this is ok to fail.
-	 * If there are effects with same name, they get overwritten.
-	 */
-	if (ffm_setup_effects(ffm.sys_props, ffm.effects)) {
-		N_DEBUG (LOG_CAT "No system level effect settings");
-	}
 	n_plugin_register_sink (plugin, &decl);
 	return TRUE;
 
-ffm_load_error2:
-	g_hash_table_destroy(ffm.effects);
-	ffm_close_device(ffm.dev_file);
-ffm_load_error1:
-	n_proplist_free(ffm.sys_props);
-	return FALSE;
 }
 
 N_PLUGIN_UNLOAD(plugin)
@@ -691,7 +692,5 @@ N_PLUGIN_UNLOAD(plugin)
 	(void) plugin;
 	N_DEBUG (LOG_CAT "plugin unload");
 
-	g_hash_table_destroy(ffm.effects);
-	ffm_close_device(ffm.dev_file);
 	n_proplist_free(ffm.sys_props);
 }

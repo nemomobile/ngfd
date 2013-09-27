@@ -72,7 +72,7 @@ int ffmemless_evdev_file_open(const char *file_name)
 	int result, fp;
 	unsigned long features[4];
 
-	fp = open(file_name, O_RDWR);
+	fp = open(file_name, O_RDWR | O_CLOEXEC);
 
 	if (fp == -1) {
 		perror("test file open");
@@ -107,7 +107,7 @@ int ffmemless_evdev_file_search(void)
 	/* fail safe stop at 256 devices */
 	while (fp && i < 256) {
 		sprintf(device_file_name, "/dev/input/event%d", i);
-		fp = open(device_file_name, O_RDWR);
+		fp = open(device_file_name, O_RDWR | O_CLOEXEC);
 		if (fp == -1) {
 			perror("test file open");
 			break;
