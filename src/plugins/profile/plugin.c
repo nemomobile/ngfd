@@ -19,15 +19,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
  */
 
-#include "profile-plugin.h"
-#include "session.h"
-
 #include <profiled/libprofile.h>
 #include <stdlib.h>
 
 #include <sys/types.h>
 #include <dirent.h>
 
+#include <dbus/dbus.h>
+
+#include <ngf/core.h>
 #include <ngf/plugin.h>
 #include <ngf/event.h>
 #include <ngf/context.h>
@@ -57,6 +57,7 @@ typedef struct _ProfileEntry
     gchar  *target;
 } ProfileEntry;
 
+static DBusConnection *session_bus = NULL;
 static guint       num_system_sound_levels = 0;
 static int        *system_sound_levels     = NULL;
 static GList      *request_keys            = NULL;
@@ -279,15 +280,6 @@ find_profile_entries (NCore *core)
 
         n_proplist_foreach (props, find_entries_within_event_cb, NULL);
     }
-}
-
-void
-profile_plugin_reconnect (NCore *core, DBusConnection *session_bus)
-{
-    profile_connection_set (session_bus);
-
-    query_current_profile (core);
-    query_current_values (core);
 }
 
 static gchar*
@@ -520,6 +512,30 @@ setup_system_sound_levels (NValue *value)
     g_strfreev (split);
 }
 
+static gboolean
+setup_session_bus_connection (NCore *core)
+{
+    /* setup the session bus connection */
+    DBusError error;
+    dbus_error_init(&error);
+
+    if (!session_bus) {
+        session_bus = dbus_bus_get(DBUS_BUS_SESSION, &error);
+        if (dbus_error_is_set(&error)) {
+            N_DEBUG (LOG_CAT "Could not connect to DBus session bus.");
+            return FALSE;
+        }
+    }
+
+    N_DEBUG (LOG_CAT "Connected to DBus session bus.");
+    profile_connection_set (session_bus);
+
+    query_current_profile (core);
+    query_current_values (core);
+
+    return TRUE;
+}
+
 N_PLUGIN_LOAD (plugin)
 {
     NCore     *core   = NULL;
@@ -558,9 +574,7 @@ N_PLUGIN_LOAD (plugin)
 
     profile_tracker_init ();
 
-    /* setup the session */
-
-    if (!session_initialize (core))
+    if (!setup_session_bus_connection (core))
         return FALSE;
 
     return TRUE;
@@ -568,7 +582,6 @@ N_PLUGIN_LOAD (plugin)
 
 N_PLUGIN_UNLOAD (plugin)
 {
-    session_shutdown     ();
     profile_tracker_quit ();
 
     g_free               (file_search_path);
