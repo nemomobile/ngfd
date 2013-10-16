@@ -264,9 +264,12 @@ create_stream_properties (NProplist *props)
 
     set_structure_string (s, "media.filename", source);
 
-    /* set a media.role to "media" */
-
-    set_structure_string (s, "media.role", "media");
+    /* set media.role from configuration file if defined. Default to "media" */
+    role = n_proplist_get_string (props, STREAM_PREFIX_KEY "media.role");
+    if (role)
+        set_structure_string (s, "media.role", role);
+    else
+        set_structure_string (s, "media.role", "media");
 
     /* if system sound level is off and the flag is set, then we need to
        use different stream restore role. */
