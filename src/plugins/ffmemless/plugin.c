@@ -659,6 +659,7 @@ N_PLUGIN_LOAD(plugin)
 {
 	const NProplist *props = n_plugin_get_params(plugin);
 	const gchar *system_settings_file;
+	int device_fd;
 
 	N_DEBUG (LOG_CAT "plugin load");
 
@@ -672,6 +673,14 @@ N_PLUGIN_LOAD(plugin)
 		.pause      = ffm_sink_pause,
 		.stop       = ffm_sink_stop
 	};
+
+	/* Checking if there is a device, no point in loading plugin if not..*/
+	device_fd = ffmemless_evdev_file_search();
+	if (device_fd < 0) {
+		N_DEBUG (LOG_CAT "No force feedback device, stopping plugin");
+		return FALSE;
+	}
+	ffmemless_evdev_file_close(device_fd);
 
 	ffm.ngfd_props = props;
 	system_settings_file = g_getenv(n_proplist_get_string(props,
