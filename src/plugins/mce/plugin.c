@@ -19,175 +19,207 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
  
-#include <string.h>
-
+#include <ngf/plugin.h>
 #include <dbus/dbus.h>
 #include <dbus/dbus-glib-lowlevel.h>
 #include <mce/dbus-names.h>
 
-#include <ngf/plugin.h>
-#include <ngf/context.h>
-
-#define LOG_CAT             "mce: "
-#define DISPLAY_STATUS_KEY "display_status"
+#define MCE_KEY "plugin.mce.data"
+#define LOG_CAT "mce: "
+#define DISPLAY_BLANK_TIMEOUT 50
 
 N_PLUGIN_NAME        ("mce")
 N_PLUGIN_VERSION     ("0.1")
-N_PLUGIN_DESCRIPTION ("MCE plugin for querying screen status")
+N_PLUGIN_DESCRIPTION ("MCE plugin for handling backlight and led actions")
 
-static DBusConnection *system_bus = NULL;
+typedef struct _MceData
+{
+    NRequest       *request;
+    NSinkInterface *iface;
+    gchar          *pattern;
+} MceData;
+
+DBusConnection *bus = NULL;
 
 static gboolean
-initialize_system_bus ()
+call_dbus_method (DBusConnection *bus, DBusMessage *msg)
 {
-    DBusError error;
-
-    dbus_error_init (&error);
-    system_bus = dbus_bus_get (DBUS_BUS_SYSTEM, &error);
-
-    if (dbus_error_is_set (&error)) {
-        N_WARNING (LOG_CAT "failed to open connection to system bus: %s",
-            error.message);
-        dbus_error_free (&error);
+    if (!dbus_connection_send (bus, msg, 0)) {
+        N_WARNING ("Failed to send DBus message %s to interface %s", dbus_message_get_member (msg), dbus_message_get_interface (msg));
         return FALSE;
     }
-
-    dbus_connection_setup_with_g_main (system_bus, NULL);
 
     return TRUE;
 }
 
-static void
-shutdown_system_bus ()
+static gboolean
+backlight_on (void)
 {
-    if (system_bus != NULL) {
-        dbus_connection_unref (system_bus);
-        system_bus = NULL;
-    }
-}
+    DBusMessage *msg = NULL;
+    gboolean     ret = FALSE;
 
-static void
-store_display_status (NContext *context, const char *value)
-{
-    g_assert (context != NULL);
+    if (bus == NULL)
+        return FALSE;
 
-    NValue *v;
+    msg = dbus_message_new_method_call (MCE_SERVICE, MCE_REQUEST_PATH, MCE_REQUEST_IF, MCE_DISPLAY_ON_REQ);
+    if (msg == NULL)
+        return FALSE;
 
-    N_DEBUG (LOG_CAT "display status changed to: %s", value);
-
-    v = n_value_new ();
-    n_value_set_string (v, value);
-    n_context_set_value (context, DISPLAY_STATUS_KEY, v);
-}
-
-static DBusHandlerResult
-receive_display_status_signal (DBusConnection *connection, DBusMessage *msg, void *user_data)
-{
-    (void) connection;
-
-    NContext *context = (NContext*) user_data;
-    const char *value;
- 
-    if (dbus_message_is_signal (msg, MCE_SIGNAL_IF, MCE_DISPLAY_SIG)) {
-        N_INFO (LOG_CAT "received display status signal");
-        if (dbus_message_get_args (msg, NULL, DBUS_TYPE_STRING, &value, DBUS_TYPE_INVALID)) {
-            store_display_status (context, value);
-        }
-    }
-
-    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
-}
-
-static void
-follow_display_status_signal (NContext *context)
-{
-    DBusError error;
-
-    dbus_error_init (&error);
-    dbus_bus_add_match (system_bus,
-                        "interface=" MCE_SIGNAL_IF ","
-                        "path=" MCE_SIGNAL_PATH ","
-                        "member=" MCE_DISPLAY_SIG,
-                        &error);
-
-    if (dbus_error_is_set (&error)) {
-        N_WARNING (LOG_CAT "failed to add watch: %s",
-            error.message);
-        dbus_error_free (&error);
-        return;
-    }
-
-    if (!dbus_connection_add_filter (system_bus, receive_display_status_signal, context, NULL)) {
-        N_WARNING (LOG_CAT "failed to add filter");
-        return;
-    }
-}
-
-static void
-complete_display_status (DBusPendingCall *pending, void *user_data)
-{
-    DBusMessage *msg;
-    const char *value;
-    NContext *context = (NContext*) user_data;
-
-    msg = dbus_pending_call_steal_reply (pending);
-
-    if (msg == NULL || dbus_message_get_type (msg) == DBUS_MESSAGE_TYPE_ERROR) {
-        N_WARNING (LOG_CAT "failed to MCE display status reply");
-        goto fail_msg;
-    }
-
-    if (!dbus_message_get_args (msg, NULL, DBUS_TYPE_STRING, &value, DBUS_TYPE_INVALID)) {
-        N_WARNING (LOG_CAT "invalid reply to MCE display status");
-        goto fail_msg;
-    }
-
-    store_display_status (context, value);
-
-fail_msg:
+    ret = call_dbus_method (bus, msg);
     dbus_message_unref (msg);
-    dbus_pending_call_unref (pending);
+
+    return ret;
 }
 
 static gboolean
-request_display_status (NContext *context)
+toggle_pattern (const char *pattern, gboolean activate)
 {
-    DBusMessage *msg;
-    DBusPendingCall *pending;
+    DBusMessage *msg = NULL;
+    gboolean     ret = FALSE;
 
-    N_INFO (LOG_CAT "requesting display status");
-
-    msg = dbus_message_new_method_call (MCE_SERVICE, MCE_REQUEST_PATH,
-        MCE_REQUEST_IF, MCE_DISPLAY_STATUS_GET);
-
-    if (msg == NULL) {
-        N_WARNING (LOG_CAT "failed to create MCE DBus request");
+    if (bus == NULL || pattern == NULL)
         return FALSE;
-    }
 
-    if (!dbus_connection_send_with_reply (system_bus, msg, &pending, -1)) {
-        N_WARNING (LOG_CAT "faile to send display status message");
+    msg = dbus_message_new_method_call (MCE_SERVICE, MCE_REQUEST_PATH, MCE_REQUEST_IF,
+        activate ? MCE_ACTIVATE_LED_PATTERN : MCE_DEACTIVATE_LED_PATTERN);
+
+    if (msg == NULL)
+        return FALSE;
+
+    if (!dbus_message_append_args (msg, DBUS_TYPE_STRING, &pattern, DBUS_TYPE_INVALID)) {
         dbus_message_unref (msg);
         return FALSE;
     }
 
-    dbus_pending_call_set_notify (pending, complete_display_status, context, NULL);
+    ret = call_dbus_method (bus, msg);
     dbus_message_unref (msg);
+
+    if (ret)
+        N_DEBUG ("%s >> led pattern %s %s.", __FUNCTION__, pattern, activate ? "activated" : "deactivated");
+
+    return ret;
+}
+
+static int
+mce_sink_initialize (NSinkInterface *iface)
+{
+    (void) iface;
+    DBusError       error;
+
+    dbus_error_init (&error);
+    bus = dbus_bus_get (DBUS_BUS_SYSTEM, &error);
+    if (bus == NULL) {
+        N_WARNING ("%s >> failed to get system bus: %s",error.message);
+        dbus_error_free (&error);
+        return FALSE;
+    }
+    
+    return TRUE;
+}
+
+static void
+mce_sink_shutdown (NSinkInterface *iface)
+{
+    (void) iface;
+}
+
+static int
+mce_sink_can_handle (NSinkInterface *iface, NRequest *request)
+{
+    (void) iface;
+    const NProplist *props = n_request_get_properties (request);
+
+    if (n_proplist_has_key (props, "mce.backlight_on") || n_proplist_has_key (props, "mce.led_pattern")) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static int
+mce_sink_prepare (NSinkInterface *iface, NRequest *request)
+{
+    (void) iface;
+    (void) request;
+    
+    MceData *data = g_slice_new0 (MceData);
+
+    data->request    = request;
+    data->iface      = iface;
+
+    n_request_store_data (request, MCE_KEY, data);
+    n_sink_interface_synchronize (iface, request);
+    
+    return TRUE;
+}
+
+static int
+mce_sink_play (NSinkInterface *iface, NRequest *request)
+{
+    const NProplist *props = n_request_get_properties (request);
+    (void) iface;
+    const gchar *pattern = NULL;
+    gboolean completed = TRUE;
+
+    MceData *data = (MceData*) n_request_get_data (request, MCE_KEY);
+    g_assert (data != NULL);
+
+    if (n_proplist_get_bool (props, "mce.backlight_on"))
+        backlight_on ();
+
+    pattern = n_proplist_get_string (props, "mce.led_pattern");
+    if (pattern != NULL) {
+        data->pattern = g_strdup (pattern);
+        if (toggle_pattern (pattern, TRUE))
+            completed = FALSE;
+    }
+
+    if (completed)
+        n_sink_interface_complete (data->iface, data->request);
+    
+    return TRUE;
+}
+
+static int
+mce_sink_pause (NSinkInterface *iface, NRequest *request)
+{
+    (void) iface;
+    (void) request;
 
     return TRUE;
 }
 
+static void
+mce_sink_stop (NSinkInterface *iface, NRequest *request)
+{
+    (void) iface;
+
+    MceData *data = (MceData*) n_request_get_data (request, MCE_KEY);
+    g_assert (data != NULL);
+
+    if (data->pattern) {
+        toggle_pattern (data->pattern, FALSE);
+        g_free (data->pattern);
+        data->pattern = NULL;
+    }
+
+    g_slice_free (MceData, data);
+}
+
 N_PLUGIN_LOAD (plugin)
 {
-    NCore    *core    = n_plugin_get_core (plugin);
-    NContext *context = n_core_get_context (core);
+    static const NSinkInterfaceDecl decl = {
+        .name       = "mce",
+        .initialize = mce_sink_initialize,
+        .shutdown   = mce_sink_shutdown,
+        .can_handle = mce_sink_can_handle,
+        .prepare    = mce_sink_prepare,
+        .play       = mce_sink_play,
+        .pause      = mce_sink_pause,
+        .stop       = mce_sink_stop
+    };
 
-    core = n_plugin_get_core (plugin);
-
-    if (initialize_system_bus ()) {
-        follow_display_status_signal (context);
-        request_display_status (context);
-    }
+    n_plugin_register_sink (plugin, &decl);
 
     return TRUE;
 }
@@ -195,6 +227,4 @@ N_PLUGIN_LOAD (plugin)
 N_PLUGIN_UNLOAD (plugin)
 {
     (void) plugin;
-
-    shutdown_system_bus ();
 }
