@@ -37,6 +37,7 @@ typedef struct _MceData
     NRequest       *request;
     NSinkInterface *iface;
     gchar          *pattern;
+    guint           timeout_id;
 } MceData;
 
 DBusConnection *bus = NULL;
@@ -153,13 +154,23 @@ mce_sink_prepare (NSinkInterface *iface, NRequest *request)
     return TRUE;
 }
 
+static gboolean
+mce_playback_done(gpointer userdata)
+{
+    MceData *data = (MceData *) userdata;
+
+    data->timeout_id = 0;
+    n_sink_interface_complete(data->iface, data->request);
+
+    return FALSE;
+}
+
 static int
 mce_sink_play (NSinkInterface *iface, NRequest *request)
 {
     const NProplist *props = n_request_get_properties (request);
     (void) iface;
     const gchar *pattern = NULL;
-    gboolean completed = TRUE;
 
     MceData *data = (MceData*) n_request_get_data (request, MCE_KEY);
     g_assert (data != NULL);
@@ -170,13 +181,15 @@ mce_sink_play (NSinkInterface *iface, NRequest *request)
     pattern = n_proplist_get_string (props, "mce.led_pattern");
     if (pattern != NULL) {
         data->pattern = g_strdup (pattern);
-        if (toggle_pattern (pattern, TRUE))
-            completed = FALSE;
+        if (!toggle_pattern (pattern, TRUE)) {
+            g_free (data->pattern);
+            data->pattern = NULL;
+        }
     }
 
-    if (completed)
-        n_sink_interface_complete (data->iface, data->request);
-    
+    /* Call n_sink_interface_complete() after 100ms. */
+    data->timeout_id = g_timeout_add(100, mce_playback_done, data);
+
     return TRUE;
 }
 
