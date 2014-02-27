@@ -36,3 +36,8 @@ endif
 if BUILD_CANBERRA
 SUBDIRS += canberra
 endif
+
+if BUILD_HYBRIS_VIBRATOR
+SUBDIRS += hybris-vibrator
+endif
+

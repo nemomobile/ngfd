@@ -183,6 +183,28 @@ fi
 
 AM_CONDITIONAL(BUILD_MCE, test x$enable_mce = xyes)
 
+enable_hybris_vibrator=no
+
+PKG_CHECK_MODULES([ANDROID_HEADERS], [android-headers], [has_android_headers=yes], [has_android_headers=no])
+
+if test x$has_android_headers = xyes; then
+    AC_SUBST(ANDROID_HEADERS_CFLAGS)
+    AC_SUBST(ANDROID_HEADERS_LIBS)
+
+    # Droid Vibrator HAL plugin (via libhybris)
+    PKG_CHECK_MODULES([HYBRIS_VIBRATOR], [libvibrator], [has_hybris_vibrator=yes], [has_hybris_vibrator=no])
+    AC_SUBST(HYBRIS_VIBRATOR_CFLAGS)
+    AC_SUBST(HYBRIS_VIBRATOR_LIBS)
+
+    if test x$has_hybris_vibrator = xyes; then
+        enable_hybris_vibrator=yes
+    else
+        enable_hybris_vibrator=no
+    fi
+fi
+
+AM_CONDITIONAL(BUILD_HYBRIS_VIBRATOR, test x$enable_hybris_vibrator = xyes)
+
 # Stream restore plugin needs DBus
 
 if test x$enable_dbus = xyes ; then
@@ -219,6 +241,7 @@ echo "
     MCE plugin:             ${enable_mce}
     Stream restore plugin:  ${enable_streamrestore}
     Tone generator plugin:  ${enable_tonegen}
+    Hybris Vibrator plugin: ${enable_hybris_vibrator}
 "
 
 AC_CONFIG_FILES([
@@ -241,6 +264,7 @@ src/plugins/tonegen/Makefile
 src/plugins/gst/Makefile
 src/plugins/canberra/Makefile
 src/plugins/callstate/Makefile
+src/plugins/hybris-vibrator/Makefile
 doc/Makefile
 data/Makefile
 data/events.d/Makefile
