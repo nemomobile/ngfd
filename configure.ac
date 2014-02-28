@@ -183,6 +183,28 @@ fi
 
 AM_CONDITIONAL(BUILD_MCE, test x$enable_mce = xyes)
 
+enable_droid_vibrator=no
+
+PKG_CHECK_MODULES([ANDROID_HEADERS], [android-headers], [has_android_headers=yes], [has_android_headers=no])
+
+if test x$has_android_headers = xyes; then
+    AC_SUBST(ANDROID_HEADERS_CFLAGS)
+    AC_SUBST(ANDROID_HEADERS_LIBS)
+
+    # Droid Vibrator HAL plugin (via libdroid)
+    PKG_CHECK_MODULES([DROID_VIBRATOR], [libvibrator], [has_droid_vibrator=yes], [has_droid_vibrator=no])
+    AC_SUBST(DROID_VIBRATOR_CFLAGS)
+    AC_SUBST(DROID_VIBRATOR_LIBS)
+
+    if test x$has_droid_vibrator = xyes; then
+        enable_droid_vibrator=yes
+    else
+        enable_droid_vibrator=no
+    fi
+fi
+
+AM_CONDITIONAL(BUILD_DROID_VIBRATOR, test x$enable_droid_vibrator = xyes)
+
 # Stream restore plugin needs DBus
 
 if test x$enable_dbus = xyes ; then
@@ -219,6 +241,7 @@ echo "
     MCE plugin:             ${enable_mce}
     Stream restore plugin:  ${enable_streamrestore}
     Tone generator plugin:  ${enable_tonegen}
+    Droid Vibrator plugin:  ${enable_droid_vibrator}
 "
 
 AC_CONFIG_FILES([
@@ -241,6 +264,7 @@ src/plugins/tonegen/Makefile
 src/plugins/gst/Makefile
 src/plugins/canberra/Makefile
 src/plugins/callstate/Makefile
+src/plugins/droid-vibrator/Makefile
 doc/Makefile
 data/Makefile
 data/events.d/Makefile

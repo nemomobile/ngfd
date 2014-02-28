@@ -1,7 +1,7 @@
 %define native_name ngfd
 %define hybris_flavour %{native_name}-hybris
 
-Name:       ngfd
+Name:       ngfd-hybris
 
 Summary:    Non-graphic feedback service for sounds and other events
 Version:    0.63

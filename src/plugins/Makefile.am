@@ -36,3 +36,8 @@ endif
 if BUILD_CANBERRA
 SUBDIRS += canberra
 endif
+
+if BUILD_DROID_VIBRATOR
+SUBDIRS += droid-vibrator
+endif
+
