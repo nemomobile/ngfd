@@ -128,10 +128,15 @@ static int
 mce_sink_can_handle (NSinkInterface *iface, NRequest *request)
 {
     (void) iface;
+    int led_enabled = TRUE;
     const NProplist *props = n_request_get_properties (request);
 
+    if (n_proplist_has_key (props, "mce.led_enabled")) {
+        led_enabled = n_proplist_get_bool (props, "mce.led_enabled");
+    }
+
     if (n_proplist_has_key (props, "mce.backlight_on") || n_proplist_has_key (props, "mce.led_pattern")) {
-        return TRUE;
+        return led_enabled;
     }
 
     return FALSE;
