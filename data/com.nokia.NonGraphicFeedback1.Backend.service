@@ -1,3 +1,4 @@
 [D-BUS Service]
 Name=com.nokia.NonGraphicFeedback1.Backend
-Exec=/usr/bin/ngfd
+Exec=/bin/false
+SystemdService=dbus-com.nokia.NonGraphicFeedback1.Backend.service

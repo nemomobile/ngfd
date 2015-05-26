@@ -11,6 +11,7 @@ Source1:    ngfd.service
 Requires:   %{name}-settings
 Requires:   systemd
 Requires:   systemd-user-session-targets
+BuildRequires:  systemd
 BuildRequires:  pkgconfig(glib-2.0) >= 2.18.0
 BuildRequires:  pkgconfig(dbus-1) >= 1.0.2
 BuildRequires:  pkgconfig(dbus-glib-1)
@@ -87,23 +88,21 @@ make %{?jobs:-j%jobs}
 rm -rf %{buildroot}
 %make_install
 
-install -D -m 644 %{SOURCE1} %{buildroot}%{_libdir}/systemd/user/ngfd.service
-mkdir -p %{buildroot}%{_libdir}/systemd/user/user-session.target.wants
-ln -s ../ngfd.service %{buildroot}%{_libdir}/systemd/user/user-session.target.wants/
-mkdir -p %{buildroot}%{_libdir}/systemd/user/actdead-session.target.wants
-ln -s ../ngfd.service %{buildroot}%{_libdir}/systemd/user/actdead-session.target.wants/
+install -D -m 644 %{SOURCE1} %{buildroot}%{_userunitdir}/ngfd.service
+mkdir -p %{buildroot}%{_userunitdir}/user-session.target.wants
+ln -s ../ngfd.service %{buildroot}%{_userunitdir}/user-session.target.wants/
+ln -s ngfd.service %{buildroot}%{_userunitdir}/dbus-com.nokia.NonGraphicFeedback1.Backend.service
+mkdir -p %{buildroot}%{_userunitdir}/actdead-session.target.wants
+ln -s ../ngfd.service %{buildroot}%{_userunitdir}/actdead-session.target.wants/
 
 %post
-if [ "$1" -ge 1 ]; then
-    systemctl-user daemon-reload || true
-    systemctl-user restart ngfd.service || true
-fi
+# We require reboot for system update so lets not start/stop services in
+# package installation/upgrades/removals
+systemctl-user daemon-reload || :
 
 %postun
-if [ "$1" -eq 0 ]; then
-    systemctl-user stop ngfd.service || true
-    systemctl-user daemon-reload || true
-fi
+# .. as above.
+systemctl-user daemon-reload || :
 
 %files
 %defattr(-,root,root,-)
@@ -122,9 +121,10 @@ fi
 %{_libdir}/ngf/libngfd_callstate.so
 %{_libdir}/ngf/libngfd_profile.so
 %{_libdir}/ngf/libngfd_ffmemless.so
-%{_libdir}/systemd/user/ngfd.service
-%{_libdir}/systemd/user/user-session.target.wants/ngfd.service
-%{_libdir}/systemd/user/actdead-session.target.wants/ngfd.service
+%{_userunitdir}/ngfd.service
+%{_userunitdir}/dbus-com.nokia.NonGraphicFeedback1.Backend.service
+%{_userunitdir}/user-session.target.wants/ngfd.service
+%{_userunitdir}/actdead-session.target.wants/ngfd.service
 
 %files plugin-devel
 %defattr(-,root,root,-)
