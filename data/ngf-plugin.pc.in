@@ -1,8 +1,0 @@
-prefix=@prefix@
-includedir=@includedir@/ngf
-
-Name: ngf-plugin
-Description: Headers files for implementing ngf plugins
-Version: @VERSION@
-Libs: -module -avoid-version
-Cflags: -I${includedir}
